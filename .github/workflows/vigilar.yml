@@ -1,0 +1,105 @@
+# Vigila que FairPadel esté vivo y avisa por WhatsApp cuando se cae y cuando vuelve.
+# Corre cada 5 minutos (GitHub puede demorar algunos minutos más en horas pico).
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   WHATSAPP_ACCESS_TOKEN     token de WhatsApp del servidor de FairPadel
+#   WHATSAPP_PHONE_NUMBER_ID  id del número de avisos de FairPadel en Meta
+#   AVISO_WHATSAPP            número que recibe los avisos (ej. +595982985928)
+#
+# Sólo avisa en los CAMBIOS (arriba → caído y caído → arriba), no cada 5 minutos.
+# El último estado se guarda en el caché de Actions entre corrida y corrida.
+name: Vigilar FairPadel
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      probar_aviso:
+        description: 'Mandar un WhatsApp de prueba (sí/no)'
+        default: 'no'
+
+concurrency:
+  group: vigilar
+  cancel-in-progress: false
+
+jobs:
+  vigilar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Último estado conocido
+        uses: actions/cache/restore@v4
+        with:
+          path: estado.txt
+          key: estado-${{ github.run_id }}
+          restore-keys: estado-
+
+      - name: Revisar la web y el servidor
+        id: chequeo
+        run: |
+          revisar() {
+            api=$(curl -s -m 20 https://api.fairpadel.com/api/health || true)
+            web=$(curl -s -o /dev/null -m 20 -w '%{http_code}' https://www.fairpadel.com/ || true)
+            if echo "$api" | grep -q '"db":"ok"' && [ "$web" = "200" ]; then return 0; fi
+            echo "falla: servidor=[${api:0:120}] web=[$web]"
+            return 1
+          }
+          # Tres intentos separados para no avisar por un corte de un segundo.
+          estado=caido
+          for i in 1 2 3; do
+            if revisar; then estado=arriba; break; fi
+            [ $i -lt 3 ] && sleep 40
+          done
+          anterior=$(cat estado.txt 2>/dev/null || echo arriba)
+          echo "anterior=$anterior ahora=$estado"
+          echo "$estado" > estado.txt
+          echo "estado=$estado" >> "$GITHUB_OUTPUT"
+          echo "anterior=$anterior" >> "$GITHUB_OUTPUT"
+
+      - name: Guardar el estado
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: estado.txt
+          key: estado-${{ github.run_id }}
+
+      - name: Avisar por WhatsApp
+        if: >-
+          steps.chequeo.outputs.estado != steps.chequeo.outputs.anterior ||
+          github.event.inputs.probar_aviso == 'sí' || github.event.inputs.probar_aviso == 'si'
+        env:
+          TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          PHONE_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          PARA: ${{ secrets.AVISO_WHATSAPP }}
+          ESTADO: ${{ steps.chequeo.outputs.estado }}
+          ANTERIOR: ${{ steps.chequeo.outputs.anterior }}
+        run: |
+          hora=$(TZ=America/Asuncion date '+%H:%M')
+          if [ "$ESTADO" = "caido" ]; then
+            titulo="Servidor CAIDO"
+            detalle="FairPadel no responde desde las $hora (revisado 3 veces en 2 minutos). Revisá Railway"
+          elif [ "$ANTERIOR" = "caido" ]; then
+            titulo="Servidor de vuelta"
+            detalle="FairPadel volvió a responder a las $hora"
+          else
+            titulo="Vigilante de prueba"
+            detalle="El vigilante de FairPadel funciona y el servidor está arriba ($hora)"
+          fi
+          if [ -z "$TOKEN" ] || [ -z "$PHONE_ID" ] || [ -z "$PARA" ]; then
+            echo "Faltan los secrets de WhatsApp: no se pudo avisar ($titulo)"; exit 1
+          fi
+          cuerpo=$(jq -n --arg to "$PARA" --arg t "$titulo" --arg d "$detalle" '{
+            messaging_product: "whatsapp", to: $to, type: "template",
+            template: { name: "fairpadel_aviso_admin", language: { code: "es" },
+              components: [ { type: "body", parameters: [ {type:"text", text:$t}, {type:"text", text:$d} ] } ] } }')
+          # Sólo se imprime el código HTTP: el log de un repo público lo ve cualquiera.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            "https://graph.facebook.com/v21.0/$PHONE_ID/messages" \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$cuerpo")
+          echo "WhatsApp ($titulo): HTTP $code"
+          [ "$code" = "200" ]
+
+      - name: Marcar la corrida como fallida si se cayó (GitHub manda un correo)
+        if: steps.chequeo.outputs.estado == 'caido' && steps.chequeo.outputs.anterior != 'caido'
+        run: exit 1

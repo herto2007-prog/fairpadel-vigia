@@ -1,0 +1,24 @@
+# GitHub apaga los workflows programados de un repo público que pasa 60 días sin
+# movimiento. Una vez por mes se deja un "latido" (un commit con la fecha) para que
+# el vigilante no se apague solo.
+name: Latido mensual
+
+on:
+  schedule:
+    - cron: '0 12 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          date -u '+%Y-%m-%d %H:%M UTC' > ultimo-latido.txt
+          git config user.name "fairpadel-vigia"
+          git config user.email "actions@users.noreply.github.com"
+          git add ultimo-latido.txt
+          git commit -m "latido mensual" && git push
