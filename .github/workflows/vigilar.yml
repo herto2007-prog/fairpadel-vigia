@@ -1,5 +1,6 @@
 # Vigila que FairPadel esté vivo y avisa por WhatsApp cuando se cae y cuando vuelve.
-# Corre cada 5 minutos (GitHub puede demorar algunos minutos más en horas pico).
+# Corre cada 5 minutos (GitHub puede demorar algunos minutos más en horas pico;
+# en un repo nuevo, el primer turno automático puede tardar en arrancar).
 #
 # Secrets (Settings → Secrets and variables → Actions):
 #   WHATSAPP_ACCESS_TOKEN     token de WhatsApp del servidor de FairPadel
