@@ -67,6 +67,16 @@ async function main() {
     await whatsapp('Vigilante de prueba', `El vigilante de FairPadel en Railway funciona (${horaPY()})`);
     return;
   }
+  // Prueba desde Railway: con PROBAR_AVISO=<algo nuevo> manda UN WhatsApp de prueba
+  // (una sola vez por valor; la marca queda en el volumen).
+  const prueba = (process.env.PROBAR_AVISO || '').trim();
+  if (prueba) {
+    const marca = path.join(path.dirname(ESTADO_PATH), `probado-${prueba.replace(/[^a-z0-9-]/gi, '')}`);
+    if (!fs.existsSync(marca)) {
+      await whatsapp('Vigilante de prueba', `El vigilante de FairPadel en Railway funciona (${horaPY()})`);
+      try { fs.writeFileSync(marca, new Date().toISOString()); } catch {}
+    }
+  }
   let falla = null;
   for (let i = 1; i <= 3; i++) {
     falla = await revisar();
