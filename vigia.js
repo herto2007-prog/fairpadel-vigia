@@ -1,5 +1,6 @@
-// Vigilante de FairPadel para Railway (servicio con horario: corre, revisa y termina).
-// Railway lo arranca cada 5 minutos (railway.json → cronSchedule).
+// Vigilante de FairPadel para Railway: un proceso chiquito siempre prendido que
+// revisa cada 5 minutos (el horario de Railway no tomó el cronSchedule del archivo
+// y el horario de GitHub llega con horas de atraso).
 //
 // Revisa la API (con la base) y la web. Si fallan 3 veces seguidas (40 s entre
 // intentos) avisa por WhatsApp "Servidor CAIDO"; cuando vuelve, "Servidor de vuelta".
@@ -97,4 +98,15 @@ async function main() {
   guardarEstado(ahora);
 }
 
-main().catch((e) => { console.log(`Vigilante falló: ${e.message}`); process.exitCode = 1; });
+const CADA_MS = 5 * 60 * 1000;
+
+async function vueltas() {
+  if (process.argv.includes('--una-vez') || process.argv.includes('--probar')) return main();
+  for (;;) {
+    const inicio = Date.now();
+    try { await main(); } catch (e) { console.log(`Vigilante falló: ${e.message}`); }
+    await esperar(Math.max(10000, CADA_MS - (Date.now() - inicio)));
+  }
+}
+
+vueltas();
