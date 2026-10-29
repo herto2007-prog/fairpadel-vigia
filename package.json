@@ -1,0 +1,14 @@
+{
+  "name": "fairpadel-vigia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vigilante de FairPadel: avisa por WhatsApp si la web se cae",
+  "main": "vigia.js",
+  "scripts": {
+    "start": "node vigia.js",
+    "probar": "node vigia.js --probar"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
